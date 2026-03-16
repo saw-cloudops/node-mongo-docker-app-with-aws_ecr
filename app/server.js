@@ -1,42 +1,43 @@
 let express = require('express');
 let path = require('path');
 let fs = require('fs');
-let MongoClient = require('mongodb').MongoClient;
+let MongoClient = require('mongodb').MongoClient; // ၁။ mongodb လို့ ပြင်ထားတယ်
 let bodyParser = require('body-parser');
 let app = express();
 
-app.use(bodyParser.urlencoded({
-  extended: true
-}));
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 
 app.get('/', function (req, res) {
-    res.sendFile(path.join(__dirname, "index.html"));
-  });
+  res.sendFile(path.join(__dirname, "index.html"));
+});
 
 app.get('/profile-picture', function (req, res) {
   let img = fs.readFileSync(path.join(__dirname, "images/profile-1.jpg"));
-  res.writeHead(200, {'Content-Type': 'image/jpg' });
+  res.writeHead(200, { 'Content-Type': 'image/jpg' });
   res.end(img, 'binary');
 });
 
-// use when starting application locally
-let mongoUrlLocal = "mongodb://admin:password@localhost:27017";
+// ၂။ mongodb:// လို့ ပြင်ထားတယ် 
+// let mongoUrlLocal = "mongodb://admin:123456@localhost:27017";
+// let mongoUrlLocal = "mongodb://admin:123456@mongodb:27017";
+let mongoUrlLocal = process.env.MONGO_URL || "mongodb://admin:123456@mongodb:27017";
+// "mongodb://admin:123456@mongodb:27017" <--mongodb is db service name, it can change.
 
-// use when starting application as docker container
-let mongoUrlDocker = "mongodb://admin:password@mongodb";
 
-// pass these options to mongo client connect request to avoid DeprecationWarning for current Server Discovery and Monitoring engine
 let mongoClientOptions = { useNewUrlParser: true, useUnifiedTopology: true };
 
-// "user-account" in demo with docker. "my-db" in demo with docker-compose
-let databaseName = "my-db";
+// ၃။ Mongo Express ထဲမှာ မြင်နေရတဲ့ နာမည် 'user-account' ကို သုံးပါ
+let databaseName = "user-account";
 
 app.post('/update-profile', function (req, res) {
   let userObj = req.body;
 
   MongoClient.connect(mongoUrlLocal, mongoClientOptions, function (err, client) {
-    if (err) throw err;
+    if (err) {
+      console.error("Connection Error:", err);
+      return res.status(500).send(err);
+    }
 
     let db = client.db(databaseName);
     userObj['userid'] = 1;
@@ -44,33 +45,26 @@ app.post('/update-profile', function (req, res) {
     let myquery = { userid: 1 };
     let newvalues = { $set: userObj };
 
-    db.collection("users").updateOne(myquery, newvalues, {upsert: true}, function(err, res) {
+    // ဒီနေရာမှာ callback ထဲက res ကို mongodbRes လို့ နာမည်ပြောင်းထားတယ် (Conflict မဖြစ်အောင်)
+    db.collection("users").updateOne(myquery, newvalues, { upsert: true }, function (err, mongodbRes) {
       if (err) throw err;
       client.close();
+      console.log("Successfully updated!");
+      res.send(userObj);
     });
-
   });
-  // Send response
-  res.send(userObj);
 });
 
 app.get('/get-profile', function (req, res) {
-  let response = {};
-  // Connect to the db
   MongoClient.connect(mongoUrlLocal, mongoClientOptions, function (err, client) {
     if (err) throw err;
-
     let db = client.db(databaseName);
-
     let myquery = { userid: 1 };
 
     db.collection("users").findOne(myquery, function (err, result) {
       if (err) throw err;
-      response = result;
       client.close();
-
-      // Send response
-      res.send(response ? response : {});
+      res.send(result ? result : {});
     });
   });
 });
